@@ -10,7 +10,7 @@ extern crate log;
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -112,6 +112,9 @@ fn fetch_source(ctx: &Context) {
 
     try!(fs::create_dir_all(src_dir));
 
+    // FIXME don't rely on `curl` and `tar`, instead implement this functionality in Rust.
+    // Check https://github.com/Diggsey/multirust-rs for a reference implementation of such
+    // functionality
     info!("fetching source tarball");
     let ref curl = try!(Command::new("curl")
                             .arg("-L")
@@ -186,6 +189,17 @@ path = "lib.rs""#;
     let ref temp_dir = try!(tempdir::TempDir::new("core"));
     let temp_dir = temp_dir.path();
 
+    let ref target_json = PathBuf::from(format!("{}.json", ctx.target));
+    let mut spec_file = None;
+
+    if target_json.exists() {
+        let dst = src_dir.join(target_json);
+
+        info!("copy target specification file");
+        try!(fs::copy(target_json, &dst));
+        spec_file = Some(dst);
+    }
+
     info!("building the core crate");
     assert!(try!(Command::new("cargo")
                      .args(&["build", "--target"])
@@ -200,6 +214,11 @@ path = "lib.rs""#;
                      .env("CARGO_TARGET_DIR", temp_dir)
                      .status())
                 .success());
+
+    if let Some(spec_file) = spec_file {
+        info!("delete target specification file");
+        try!(fs::remove_file(spec_file));
+    }
 
     info!("copy the core crate to the sysroot");
     let ref libdir = ctx.out_dir.join(format!("lib/rustlib/{}/lib", ctx.target));
