@@ -46,6 +46,10 @@ And `crate sysroot` does this for you. It takes cares of creating a sysroot with
 standard crates:
 
 ``` rust
+# install the cargo sysroot subcommand
+$ cargo install --git https://github.com/japaric/cargo-sysroot
+
+# create a sysroot for $target in the directory target/sysroot
 $ cargo sysroot --target $target target/sysroot
 INFO: fetching source tarball
 INFO: unpacking source tarball
@@ -55,6 +59,7 @@ INFO: building the core crate
    Compiling core v0.0.0 (file://...)
 INFO: copy the core crate to the sysroot
 
+# check the sysroot
 $ tree target/sysroot
 target/sysroot
 ├── lib
