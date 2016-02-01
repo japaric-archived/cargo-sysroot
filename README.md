@@ -9,12 +9,12 @@ You make that crate depend on [`rust-libcore`] to have Cargo cross compile the `
 part of the build process. `cargo build --target=$triple` works fine, and you get your cross
 compiled crate.
 
-[rust-libcore]: https://crates.io/crates/rust-libcore
+[`rust-libcore`]: https://crates.io/crates/rust-libcore
 
 Now let's say you want to depend on another `no_std` crate, like [`spin`], so you add it to your
 dependencies, and call `cargo build --target=$target`. But you get:
 
-[spin]: https://crates.io/crates/spin/
+[`spin`]: https://crates.io/crates/spin/
 
 ``` rust
    Compiling spin v0.3.5
