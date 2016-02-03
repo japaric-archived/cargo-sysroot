@@ -6,7 +6,7 @@ cargo install --path .
 
 # Test with supported target
 cargo sysroot --target arm-unknown-linux-gnueabihf sysroot --verbose
-tree sysroot
+tree sysroot/lib
 rm -r sysroot
 
 # Test with custom target
@@ -21,6 +21,6 @@ cat >custom.json <<EOF
 EOF
 cp custom.json ..
 cargo sysroot --target ../custom.json sysroot --verbose
-tree sysroot
+tree sysroot/lib
 rm -r sysroot
 rm custom.json
