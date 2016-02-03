@@ -28,6 +28,7 @@ struct Context<'a> {
     out_dir: &'a Path,
     release: bool,
     target: &'a str,
+    verbose: bool,
 }
 
 fn main() {
@@ -53,6 +54,9 @@ fn main() {
                                           .arg(Arg::with_name("out_dir")
                                                    .help("Output directory")
                                                    .required(true))
+                                          .arg(Arg::with_name("verbose")
+                                                   .help("Verbose cargo builds")
+                                                   .long("verbose"))
                                           .author("Jorge Aparicio <japaricious@gmail.com>"))
                           .version(env!("CARGO_PKG_VERSION"))
                           .get_matches();
@@ -70,6 +74,7 @@ fn main() {
                 out_dir: Path::new(out_dir),
                 release: matches.is_present("release"),
                 target: target,
+                verbose: matches.is_present("verbose"),
             };
 
             init_logger();
@@ -201,19 +206,15 @@ path = "lib.rs""#;
     }
 
     info!("building the core crate");
-    assert!(try!(Command::new("cargo")
-                     .args(&["build", "--target"])
-                     .arg(ctx.target)
-                     .arg(if ctx.release {
-                         "--release"
-                     } else {
-                         // XXX dummy value
-                         "--lib"
-                     })
-                     .current_dir(src_dir)
-                     .env("CARGO_TARGET_DIR", temp_dir)
-                     .status())
-                .success());
+    let mut cmd = Command::new("cargo");
+    cmd.args(&["build", "--target", ctx.target]);
+    if ctx.release {
+        cmd.arg("--release");
+    }
+    if ctx.verbose {
+        cmd.arg("--verbose");
+    }
+    assert!(try!(cmd.current_dir(src_dir).env("CARGO_TARGET_DIR", temp_dir).status()).success());
 
     if let Some(spec_file) = spec_file {
         info!("delete target specification file");
