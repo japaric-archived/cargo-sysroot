@@ -22,12 +22,19 @@ macro_rules! try {
     }
 }
 
+enum Target<'a> {
+    /// `path/to/some/target.json`
+    Spec(&'a Path),
+    /// `arm-unknown-linux-gnueabihf`
+    Triple(&'a str),
+}
+
 struct Context<'a> {
     commit_hash: &'a str,
     host: &'a str,
     out_dir: &'a Path,
     release: bool,
-    target: &'a str,
+    target: Target<'a>,
     verbose: bool,
 }
 
@@ -67,6 +74,12 @@ fn main() {
             if host == target {
                 panic!("`cargo sysroot` for host has not been implement yet");
             }
+
+            let target = if target.ends_with("json") {
+                Target::Spec(Path::new(target))
+            } else {
+                Target::Triple(target)
+            };
 
             let ref ctx = Context {
                 commit_hash: commit_hash,
@@ -194,20 +207,28 @@ path = "lib.rs""#;
     let ref temp_dir = try!(tempdir::TempDir::new("core"));
     let temp_dir = temp_dir.path();
 
-    let ref target_json = PathBuf::from(format!("{}.json", ctx.target));
-    let mut spec_file = None;
+    let (ref triple, ref spec_file): (String, _) = match ctx.target {
+        Target::Spec(path) => {
+            let path = try!(fs::canonicalize(path));
+            let triple = path.file_stem().unwrap().to_str().unwrap().into();
 
-    if target_json.exists() {
-        let dst = src_dir.join(target_json);
+            (triple, path)
+        }
+        Target::Triple(triple) => (triple.into(), PathBuf::from(format!("{}.json", triple))),
+    };
+
+    let mut copied_spec_file = false;
+    if spec_file.exists() {
+        let dst = src_dir.join(format!("{}.json", triple));
 
         info!("copy target specification file");
-        try!(fs::copy(target_json, &dst));
-        spec_file = Some(dst);
+        try!(fs::copy(spec_file, &dst));
+        copied_spec_file = true;
     }
 
     info!("building the core crate");
     let mut cmd = Command::new("cargo");
-    cmd.args(&["build", "--target", ctx.target]);
+    cmd.args(&["build", "--target", triple]);
     if ctx.release {
         cmd.arg("--release");
     }
@@ -216,17 +237,17 @@ path = "lib.rs""#;
     }
     assert!(try!(cmd.current_dir(src_dir).env("CARGO_TARGET_DIR", temp_dir).status()).success());
 
-    if let Some(spec_file) = spec_file {
+    if copied_spec_file {
         info!("delete target specification file");
         try!(fs::remove_file(spec_file));
     }
 
     info!("copy the core crate to the sysroot");
-    let ref libdir = ctx.out_dir.join(format!("lib/rustlib/{}/lib", ctx.target));
+    let ref libdir = ctx.out_dir.join(format!("lib/rustlib/{}/lib", triple));
     try!(fs::create_dir_all(libdir));
 
     let ref src = temp_dir.join(format!("{}/{}/libcore.rlib",
-                                        ctx.target,
+                                        triple,
                                         if ctx.release {
                                             "release"
                                         } else {

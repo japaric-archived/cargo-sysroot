@@ -13,9 +13,7 @@ addons:
 script:
   - cargo build
   - if [ "$TRAVIS_RUST_VERSION" = nightly ]; then
-      cargo install --path .;
-      cargo sysroot --target arm-unknown-linux-gnueabihf target/sysroot;
-      tree target/sysroot;
+      ci/run.sh;
     fi
 
 branches:
