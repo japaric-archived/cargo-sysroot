@@ -1,3 +1,7 @@
+[![Build Status][status]](https://travis-ci.org/japaric/cargo-sysroot)
+
+[status]: https://travis-ci.org/japaric/cargo-sysroot.svg?branch=master
+
 # `cargo-sysroot`
 
 > Builds a sysroot with cross compiled standard crates
