@@ -217,13 +217,13 @@ path = "lib.rs""#;
         Target::Triple(triple) => (triple.into(), PathBuf::from(format!("{}.json", triple))),
     };
 
-    let mut copied_spec_file = false;
+    let mut copied_spec_file = None;
     if spec_file.exists() {
         let dst = src_dir.join(format!("{}.json", triple));
 
         info!("copy target specification file");
         try!(fs::copy(spec_file, &dst));
-        copied_spec_file = true;
+        copied_spec_file = Some(dst);
     }
 
     info!("building the core crate");
@@ -237,9 +237,9 @@ path = "lib.rs""#;
     }
     assert!(try!(cmd.current_dir(src_dir).env("CARGO_TARGET_DIR", temp_dir).status()).success());
 
-    if copied_spec_file {
+    if let Some(file) = copied_spec_file {
         info!("delete target specification file");
-        try!(fs::remove_file(spec_file));
+        try!(fs::remove_file(file));
     }
 
     info!("copy the core crate to the sysroot");
