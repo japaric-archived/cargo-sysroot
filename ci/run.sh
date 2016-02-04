@@ -21,6 +21,10 @@ cat >custom.json <<EOF
 EOF
 cp custom.json ..
 cargo sysroot --target ../custom.json sysroot --verbose
+# check that the original spec file is still there
+[ -e ../custom.json ] || exit 1
+# check that the copied spec file was removed
+[ -e sysroot/src/libcore/custom.json ] && exit 1
 tree sysroot/lib
 rm -r sysroot
 rm custom.json
