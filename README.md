@@ -64,8 +64,8 @@ INFO: building the core crate
 INFO: copy the core crate to the sysroot
 
 # check the sysroot
-$ tree target/sysroot
-target/sysroot
+$ tree target/sysroot/debug
+target/sysroot/debug
 ├── lib
 │   └── rustlib
 │       ├── $target
@@ -90,7 +90,7 @@ sysroot:
 [rust-lang/cargo#2241]: https://github.com/rust-lang/cargo/pull/2241
 
 ```
-$ RUSTFLAGS='--sysroot target/sysroot' cargo build --target $triple
+$ RUSTFLAGS='--sysroot target/sysroot/debug' cargo build --target $triple
    Compiling spin v0.3.5
    Compiling $crate v0.1.0 (file://...)
 ```

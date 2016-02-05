@@ -243,7 +243,8 @@ path = "lib.rs""#;
     }
 
     info!("copy the core crate to the sysroot");
-    let ref libdir = ctx.out_dir.join(format!("lib/rustlib/{}/lib", triple));
+    let profile = if ctx.release { "release" } else { "debug" };
+    let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", profile, triple));
     try!(fs::create_dir_all(libdir));
 
     let ref src = temp_dir.join(format!("{}/{}/libcore.rlib",
