@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 extern crate clap;
+extern crate curl;
 extern crate fern;
 extern crate flate2;
 extern crate rustc_version;
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{App, AppSettings, Arg, SubCommand};
+use curl::http;
 
 // TODO proper error reporting
 macro_rules! try {
@@ -132,19 +134,15 @@ fn fetch_source(ctx: &Context) {
 
     try!(fs::create_dir_all(src_dir));
 
-    // FIXME don't rely on `curl` and `tar`, instead implement this functionality in Rust.
-    // Check https://github.com/Diggsey/multirust-rs for a reference implementation of such
-    // functionality
     info!("fetching source tarball");
-    let ref curl = try!(Command::new("curl")
-                            .arg("-L")
-                            .arg(format!("https://github.com/rust-lang/rust/tarball/{}", hash))
-                            .output());
+    let mut handle = http::Handle::new();
+    let url = format!("https://github.com/rust-lang/rust/tarball/{}", hash);
+    let resp = try!(handle.get(&url[..]).follow_redirects(true).exec());
 
-    assert!(curl.status.success());
+    assert_eq!(resp.get_code(), 200);
 
     info!("unpacking source tarball");
-    let decoder = try!(flate2::read::GzDecoder::new(&curl.stdout[..]));
+    let decoder = try!(flate2::read::GzDecoder::new(resp.get_body()));
     let mut archive = tar::Archive::new(decoder);
     for entry in try!(archive.entries()) {
         let mut entry = try!(entry);
