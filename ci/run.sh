@@ -7,6 +7,8 @@ main() {
 
   test_supported_target
   test_custom_target
+  # Enable this test when rust-lang/cargo#2241
+  #test_cargo_project_with_deps
 }
 
 die() {
@@ -76,6 +78,24 @@ EOF
   # clean up
   rm ../custom.json
   rm -r sysroot
+}
+
+test_cargo_project_with_deps() {
+  local triple=arm-unknown-linux-gnueabif
+
+  cargo new foo
+
+  pushd foo
+  echo 'spin = "0.3.5"' >> Cargo.toml
+
+  cat >src/lib.rs <<EOF
+#![no_std]
+extern crate spin;
+EOF
+
+  cargo sysroot --target $triple target/sysroot
+
+  RUSTFLAGS='--sysroot target/sysroot/debug' cargo build --target $triple
 }
 
 main
