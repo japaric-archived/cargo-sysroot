@@ -2,7 +2,9 @@
 
 extern crate clap;
 extern crate fern;
+extern crate flate2;
 extern crate rustc_version;
+extern crate tar;
 extern crate tempdir;
 
 #[macro_use]
@@ -11,7 +13,7 @@ extern crate log;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 
@@ -142,14 +144,22 @@ fn fetch_source(ctx: &Context) {
     assert!(curl.status.success());
 
     info!("unpacking source tarball");
-    let short_hash = &hash[..7];
-    let ref mut tar = try!(Command::new("tar")
-                               .args(&["-xz", "--strip-components", "2", "-C"])
-                               .arg(src_dir)
-                               .arg(format!("rust-lang-rust-{}/src", short_hash))
-                               .stdin(Stdio::piped())
-                               .spawn());
-    try!(tar.stdin.as_mut().unwrap().write_all(&curl.stdout));
+    let decoder = try!(flate2::read::GzDecoder::new(&curl.stdout[..]));
+    let mut archive = tar::Archive::new(decoder);
+    for entry in try!(archive.entries()) {
+        let mut entry = try!(entry);
+        let path = {
+            let path = try!(entry.path());
+            let mut components = path.components();
+            components.next(); // skip rust-lang-rust-<...>
+            let next = components.next().and_then(|s| s.as_os_str().to_str());
+            if next != Some("src") {
+                continue
+            }
+            components.as_path().to_path_buf()
+        };
+        try!(entry.unpack(&src_dir.join(path)));
+    }
 
     info!("creating .commit-hash file");
     try!(try!(File::create(hash_file)).write_all(hash.as_bytes()));
