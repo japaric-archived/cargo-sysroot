@@ -56,7 +56,8 @@ fn custom_target() {
           "llvm-target": "thumbv7m-none-eabi",
           "os": "none",
           "target-endian": "little",
-          "target-pointer-width": "32"
+          "target-pointer-width": "32",
+          "archive-format": "gnu"
         }
     "#;
     let td = t!(TempDir::new("cargo-sysroot"));

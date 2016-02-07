@@ -177,21 +177,25 @@ fn symlink_host_crates(ctx: &Context) {
     try!(fs::create_dir_all(rustlib_dir));
 
     if dst.exists() {
-        try!(fs::remove_file(dst));
+        try!(fs::remove_dir_all(dst));
     }
 
-    match () {
-        #[cfg(unix)]
-        () => {
-            use std::os::unix::fs;
+    link_dirs(&src, &dst);
+}
 
-            try!(fs::symlink(src, dst))
-        }
-        #[cfg(windows)]
-        () => {
-            use std::os::windaws::fs;
+fn link_dirs(src: &Path, dst: &Path) {
+    try!(fs::create_dir(&dst));
 
-            try!(fs::symlink_dir(src, dst))
+    for entry in try!(src.read_dir()) {
+        let entry = try!(entry);
+        let src = entry.path();
+        let dst = dst.join(entry.file_name());
+        if try!(entry.file_type()).is_dir() {
+            link_dirs(&src, &dst);
+        } else {
+            try!(fs::hard_link(&src, &dst).or_else(|_| {
+                fs::copy(&src, &dst).map(|_| ())
+            }));
         }
     }
 }
