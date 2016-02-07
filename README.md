@@ -1,6 +1,5 @@
-[![Build Status][status]](https://travis-ci.org/japaric/cargo-sysroot)
-
-[status]: https://travis-ci.org/japaric/cargo-sysroot.svg?branch=master
+[![Travis](https://travis-ci.org/japaric/cargo-sysroot.svg?branch=master)](https://travis-ci.org/japaric/cargo-sysroot)
+[![Appveyor](https://ci.appveyor.com/api/projects/status/rm0cymdvbu5a89ja/branch/master?svg=true)](https://ci.appveyor.com/project/japaric/cargo-sysroot)
 
 # `cargo-sysroot`
 
