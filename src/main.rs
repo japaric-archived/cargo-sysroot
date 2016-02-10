@@ -37,7 +37,7 @@ struct Context<'a> {
     commit_hash: &'a str,
     host: &'a str,
     out_dir: &'a Path,
-    release: bool,
+    profile: &'static str,
     target: Target<'a>,
     verbose: bool,
 }
@@ -89,7 +89,7 @@ fn main() {
                 commit_hash: commit_hash,
                 host: host,
                 out_dir: Path::new(out_dir),
-                release: matches.is_present("release"),
+                profile: if matches.is_present("release") { "release" } else { "debug" },
                 target: target,
                 verbose: matches.is_present("verbose"),
             };
@@ -171,7 +171,7 @@ fn symlink_host_crates(ctx: &Context) {
                                                    .output())
                                               .stdout));
     let ref src = Path::new(sys_root.trim_right()).join(format!("lib/rustlib/{}", ctx.host));
-    let ref rustlib_dir = ctx.out_dir.join("lib/rustlib");
+    let ref rustlib_dir = ctx.out_dir.join(format!("{}/lib/rustlib", ctx.profile));
     let ref dst = rustlib_dir.join(ctx.host);
 
     try!(fs::create_dir_all(rustlib_dir));
@@ -241,7 +241,7 @@ path = "lib.rs""#;
     info!("building the core crate");
     let mut cmd = Command::new("cargo");
     cmd.args(&["build", "--target", triple]);
-    if ctx.release {
+    if ctx.profile == "release" {
         cmd.arg("--release");
     }
     if ctx.verbose {
@@ -255,17 +255,12 @@ path = "lib.rs""#;
     }
 
     info!("copy the core crate to the sysroot");
-    let profile = if ctx.release { "release" } else { "debug" };
-    let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", profile, triple));
+    let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", ctx.profile, triple));
     try!(fs::create_dir_all(libdir));
 
     let ref src = temp_dir.join(format!("{}/{}/libcore.rlib",
                                         triple,
-                                        if ctx.release {
-                                            "release"
-                                        } else {
-                                            "debug"
-                                        }));
+                                        ctx.profile));
     let ref dst = libdir.join("libcore.rlib");
     try!(fs::copy(src, dst));
 }
