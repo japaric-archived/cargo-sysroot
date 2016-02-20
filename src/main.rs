@@ -203,18 +203,7 @@ fn link_dirs(src: &Path, dst: &Path) {
 // XXX we only build the core crate for now
 // TODO build the rest of crates
 fn build_target_crates(ctx: &Context) {
-    const CARGO_TOML: &'static str = r#"[package]
-authors = ["The Rust Project Developers"]
-name = "core"
-version = "0.0.0"
-
-[lib]
-name = "core"
-path = "lib.rs""#;
-
     let ref src_dir = ctx.out_dir.join("src/libcore");
-
-    try!(try!(File::create(src_dir.join("Cargo.toml"))).write_all(CARGO_TOML.as_bytes()));
 
     let ref temp_dir = try!(tempdir::TempDir::new("core"));
     let temp_dir = temp_dir.path();

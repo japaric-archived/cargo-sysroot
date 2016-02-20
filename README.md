@@ -48,6 +48,8 @@ of the default Rust installation.
 And `crate sysroot` does this for you. It takes cares of creating a sysroot with cross compiled
 standard crates:
 
+**NOTE** `cargo-sysroot` only works with nightly newer than 2016-02-12.
+
 ``` rust
 # install the cargo sysroot subcommand
 $ cargo install --git https://github.com/japaric/cargo-sysroot
