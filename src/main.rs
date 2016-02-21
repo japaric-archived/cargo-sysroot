@@ -7,11 +7,12 @@ extern crate flate2;
 extern crate rustc_version;
 extern crate tar;
 extern crate tempdir;
+extern crate toml;
 
 #[macro_use]
 extern crate log;
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,6 +41,50 @@ struct Context<'a> {
     profile: &'static str,
     target: Target<'a>,
     verbose: bool,
+}
+
+struct Config {
+    table: Option<toml::Value>,
+}
+
+impl Config {
+    /// Parses `sysroot.toml`
+    fn parse() -> Config {
+        let path = Path::new("sysroot.toml");
+
+        let table = if path.exists() {
+            let ref mut toml = String::new();
+
+            try!(try!(File::open(path)).read_to_string(toml));
+
+            toml::Parser::new(toml).parse().map(toml::Value::Table)
+        } else {
+            info!("no sysroot.toml found, using default configuration");
+
+            None
+        };
+
+        Config { table: table }
+    }
+
+    /// Crates to build for this target, returns `["core"]` if not specified
+    fn crates(&self, target: &str) -> Vec<String> {
+        let ref key = format!("target.{}.crates", target);
+
+        let mut crates = self.table
+                             .as_ref()
+                             .and_then(|t| t.lookup(key))
+                             .and_then(|v| v.as_slice())
+                             .and_then(|vs| {
+                                 vs.iter().map(|v| v.as_str().map(|s| s.to_owned())).collect()
+                             })
+                             .unwrap_or_else(|| vec!["core".to_owned()]);
+
+        crates.push("core".to_owned());
+        crates.sort();
+        crates.dedup();
+        crates
+    }
 }
 
 fn main() {
@@ -89,7 +134,11 @@ fn main() {
                 commit_hash: commit_hash,
                 host: host,
                 out_dir: Path::new(out_dir),
-                profile: if matches.is_present("release") { "release" } else { "debug" },
+                profile: if matches.is_present("release") {
+                    "release"
+                } else {
+                    "debug"
+                },
                 target: target,
                 verbose: matches.is_present("verbose"),
             };
@@ -152,7 +201,7 @@ fn fetch_source(ctx: &Context) {
             components.next(); // skip rust-lang-rust-<...>
             let next = components.next().and_then(|s| s.as_os_str().to_str());
             if next != Some("src") {
-                continue
+                continue;
             }
             components.as_path().to_path_buf()
         };
@@ -193,20 +242,30 @@ fn link_dirs(src: &Path, dst: &Path) {
         if try!(entry.file_type()).is_dir() {
             link_dirs(&src, &dst);
         } else {
-            try!(fs::hard_link(&src, &dst).or_else(|_| {
-                fs::copy(&src, &dst).map(|_| ())
-            }));
+            try!(fs::hard_link(&src, &dst).or_else(|_| fs::copy(&src, &dst).map(|_| ())));
         }
     }
 }
 
-// XXX we only build the core crate for now
-// TODO build the rest of crates
 fn build_target_crates(ctx: &Context) {
-    let ref src_dir = ctx.out_dir.join("src/libcore");
+    const LIB_RS: &'static [u8] = b"#![no_std]";
 
-    let ref temp_dir = try!(tempdir::TempDir::new("core"));
+    let ref config = Config::parse();
+
+    let temp_dir = try!(tempdir::TempDir::new("sysroot"));
     let temp_dir = temp_dir.path();
+
+    // Create Cargo project
+    let ref mut cargo = Command::new("cargo");
+    cargo.current_dir(temp_dir);
+    cargo.args(&["new", "--vcs", "none"]);
+    if ctx.verbose {
+        cargo.arg("--verbose");
+    }
+    assert!(try!(cargo.arg("sysroot").status()).success());
+
+    let ref cargo_dir = temp_dir.join("sysroot");
+    let ref src_dir = try!(fs::canonicalize(ctx.out_dir)).join("src");
 
     let (ref triple, ref spec_file): (String, _) = match ctx.target {
         Target::Spec(path) => {
@@ -218,38 +277,49 @@ fn build_target_crates(ctx: &Context) {
         Target::Triple(triple) => (triple.into(), PathBuf::from(format!("{}.json", triple))),
     };
 
-    let mut copied_spec_file = None;
-    if spec_file.exists() {
-        let dst = src_dir.join(format!("{}.json", triple));
-
-        info!("copy target specification file");
-        try!(fs::copy(spec_file, &dst));
-        copied_spec_file = Some(dst);
+    // Add crates to build as dependencies
+    let ref mut toml = try!(OpenOptions::new()
+                                .write(true)
+                                .append(true)
+                                .open(cargo_dir.join("Cargo.toml")));
+    let ref crates = config.crates(triple);
+    info!("will build the following crates: {:?}", crates);
+    for ref krate in crates {
+        try!(writeln!(toml,
+                      "{} = {{ path = \"{}\" }}",
+                      krate,
+                      src_dir.join(format!("lib{}", krate)).display()))
     }
 
-    info!("building the core crate");
-    let mut cmd = Command::new("cargo");
-    cmd.args(&["build", "--target", triple]);
+    // Rewrite lib.rs to only depend on libcore
+    try!(try!(OpenOptions::new().write(true).truncate(true).open(cargo_dir.join("src/lib.rs")))
+             .write_all(LIB_RS));
+
+    if spec_file.exists() {
+        info!("copy target specification file");
+        try!(fs::copy(spec_file, cargo_dir.join(format!("{}.json", triple))));
+    }
+
+    info!("building the target crates");
+    let ref mut cargo = Command::new("cargo");
+    cargo.current_dir(cargo_dir);
+    cargo.args(&["build", "--target", triple]);
     if ctx.profile == "release" {
-        cmd.arg("--release");
+        cargo.arg("--release");
     }
     if ctx.verbose {
-        cmd.arg("--verbose");
+        cargo.arg("--verbose");
     }
-    assert!(try!(cmd.current_dir(src_dir).env("CARGO_TARGET_DIR", temp_dir).status()).success());
+    assert!(try!(cargo.status()).success());
 
-    if let Some(file) = copied_spec_file {
-        info!("delete target specification file");
-        try!(fs::remove_file(file));
-    }
-
-    info!("copy the core crate to the sysroot");
+    info!("copy the target crates to the sysroot");
     let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", ctx.profile, triple));
-    try!(fs::create_dir_all(libdir));
+    let ref deps_dir = cargo_dir.join(format!("target/{}/{}/deps", triple, ctx.profile));
 
-    let ref src = temp_dir.join(format!("{}/{}/libcore.rlib",
-                                        triple,
-                                        ctx.profile));
-    let ref dst = libdir.join("libcore.rlib");
-    try!(fs::copy(src, dst));
+    try!(fs::create_dir_all(libdir));
+    for entry in try!(fs::read_dir(deps_dir)) {
+        let entry = try!(entry);
+
+        try!(fs::copy(entry.path(), libdir.join(entry.file_name())));
+    }
 }
