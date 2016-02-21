@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+extern crate chrono;
 extern crate clap;
 extern crate curl;
 extern crate fern;
@@ -17,13 +18,15 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use chrono::NaiveDate;
 use clap::{App, AppSettings, Arg, SubCommand};
 use curl::http;
+use rustc_version::Channel;
 
 // TODO proper error reporting
 macro_rules! try {
     ($e:expr) => {
-        $e.unwrap_or_else(|_| panic!(stringify!($e)))
+        $e.unwrap_or_else(|e| panic!("{} with {}", stringify!($e), e))
     }
 }
 
@@ -35,6 +38,7 @@ enum Target<'a> {
 }
 
 struct Context<'a> {
+    commit_date: NaiveDate,
     commit_hash: &'a str,
     host: &'a str,
     out_dir: &'a Path,
@@ -88,9 +92,14 @@ impl Config {
 }
 
 fn main() {
-    let rustc_version::VersionMeta { ref host, ref commit_hash, .. } =
+    let rustc_version::VersionMeta { ref host, ref commit_date, ref commit_hash, ref channel, .. } =
         rustc_version::version_meta();
     let commit_hash = commit_hash.as_ref().unwrap();
+
+    match *channel {
+        Channel::Nightly => {}
+        _ => panic!("only the nightly channel is supported at this time (see issue #5)"),
+    }
 
     let ref matches = App::new("cargo-sysroot")
                           .bin_name("cargo")
@@ -131,6 +140,8 @@ fn main() {
             };
 
             let ref ctx = Context {
+                commit_date: NaiveDate::parse_from_str(commit_date.as_ref().unwrap(), "%Y-%m-%d")
+                                 .unwrap(),
                 commit_hash: commit_hash,
                 host: host,
                 out_dir: Path::new(out_dir),
@@ -161,7 +172,12 @@ fn init_logger() {
     try!(fern::init_global_logger(config, log::LogLevelFilter::Trace));
 }
 
+// TODO Ultimately, we want to use `multirust fetch-source` for 100% correctness
 fn fetch_source(ctx: &Context) {
+    // XXX There doesn't seem to be way to get the _nightly_ date from the output of `rustc -Vv`
+    // So we _assume_ the nightly day is the day after the commit-date found in `rustc -Vv` which
+    // seems to be the common case, but it could be wrong and we'll end up building unusable crates
+    let date = ctx.commit_date.succ();
     let hash = ctx.commit_hash;
     let ref src_dir = ctx.out_dir.join("src");
     let ref hash_file = src_dir.join(".commit-hash");
@@ -184,9 +200,10 @@ fn fetch_source(ctx: &Context) {
     try!(fs::create_dir_all(src_dir));
 
     info!("fetching source tarball");
-    let mut handle = http::Handle::new();
-    let url = format!("https://github.com/rust-lang/rust/tarball/{}", hash);
-    let resp = try!(handle.get(&url[..]).follow_redirects(true).exec());
+    let handle = http::Handle::new();
+    let url = format!("http://static.rust-lang.org/dist/{}/rustc-nightly-src.tar.gz",
+                      date.format("%Y-%m-%d"));
+    let resp = try!(handle.timeout(300_000).get(&url[..]).follow_redirects(true).exec());
 
     assert_eq!(resp.get_code(), 200);
 

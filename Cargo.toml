@@ -5,6 +5,7 @@ name = "cargo-sysroot"
 version = "0.1.0"
 
 [dependencies]
+chrono = "0.2.19"
 clap = "2.0.2"
 curl = "0.2"
 fern = "0.3.5"
