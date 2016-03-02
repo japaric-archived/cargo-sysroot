@@ -48,7 +48,7 @@ of the default Rust installation.
 And `crate sysroot` does this for you. It takes cares of creating a sysroot with cross compiled
 standard crates:
 
-**NOTE** `cargo-sysroot` only works with nightly newer than 2016-02-12.
+**NOTE** `cargo-sysroot` only works with nightly newer than 2016-02-28.
 
 ``` rust
 # install the cargo sysroot subcommand
@@ -60,7 +60,9 @@ INFO: fetching source tarball
 INFO: unpacking source tarball
 INFO: creating .commit-hash file
 INFO: symlinking host crates
-INFO: building the core crate
+INFO: no sysroot.toml found, using default configuration
+INFO: will build the following crates: ["core"]
+INFO: building the target crates
    Compiling core v0.0.0 (file://...)
 INFO: copy the core crate to the sysroot
 
@@ -96,12 +98,45 @@ $ RUSTFLAGS='--sysroot target/sysroot/debug' cargo build --target $triple
    Compiling $crate v0.1.0 (file://...)
 ```
 
+## Building more than just the `core` crate
+
+By default, `cargo-sysroot` only builds the `core` crate. But you can ask `cargo-sysroot` to compile
+other crates using a `sysroot.toml` manifest. The syntax is like this:
+
+```
+[target.$target]
+crates = ["$crate1", "$crate2", ...]
+```
+
+For example you can compile the collections crate for a "bare metal" target:
+
+```
+$ cat sysroot.toml
+[target.thumbv7m-none-eabi]
+crates = ["collections"]
+
+$ cargo sysroot --target thumbv7m-none-eabi.json sysroot
+INFO: source up to date
+INFO: symlinking host crates
+INFO: will build the following crates: ["collections", "core"]
+INFO: copy target specification file
+INFO: building the target crates
+   Compiling core v0.0.0 (file:///tmp/sysroot.Aq4Lamrp2F7K/sysroot)
+   Compiling rustc_unicode v0.0.0 (file:///tmp/sysroot.Aq4Lamrp2F7K/sysroot)
+   Compiling alloc v0.0.0 (file:///tmp/sysroot.Aq4Lamrp2F7K/sysroot)
+   Compiling collections v0.0.0 (file:///tmp/sysroot.Aq4Lamrp2F7K/sysroot)
+   Compiling sysroot v0.1.0 (file:///tmp/sysroot.Aq4Lamrp2F7K/sysroot)
+INFO: copy the target crates to the sysroot
+```
+
+Cross compiling crates that depend on C libraries like jemalloc have yet to be implemented.
+
 ## Future
 
 Right now `cargo sysroot` only cross compiles the `core` crate, but in the future it will be able
 to compile any standard crate. This would make it easier to target systems where the Rust team
 doesn't [provide] cross compiled standard crates. Rust's [new Cargo-based build system] will make
-this easier to implement.
+this easier to implement. (This has been implemented!)
 
 [provide]: http://static.rust-lang.org/dist/
 [new Cargo-based build system]: https://github.com/rust-lang/rust/pull/31123
@@ -113,7 +148,7 @@ this:
 
 ``` toml
 # Customize the std crate for the mips-musl target
-[mips-unknown-linux-musl.std]
+[target.mips-unknown-linux-musl.std]
 # disables both backtraces, and statically linked jemalloc
 default-features = false
 # enables dynamically linked jemalloc
