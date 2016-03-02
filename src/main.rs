@@ -13,6 +13,7 @@ extern crate toml;
 #[macro_use]
 extern crate log;
 
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -282,7 +283,7 @@ fn build_target_crates(ctx: &Context) {
     assert!(try!(cargo.arg("sysroot").status()).success());
 
     let ref cargo_dir = temp_dir.join("sysroot");
-    let ref src_dir = try!(fs::canonicalize(ctx.out_dir)).join("src");
+    let ref src_dir = env::current_dir().unwrap().join(ctx.out_dir).join("src");
 
     let (ref triple, ref spec_file): (String, _) = match ctx.target {
         Target::Spec(path) => {
