@@ -1,9 +1,10 @@
 extern crate tempdir;
 
-use std::io::prelude::*;
 use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
 use std::process::Command;
-use std::env;
+use std::{env, fs};
 
 use tempdir::TempDir;
 
@@ -23,6 +24,20 @@ fn cargo_sysroot() -> Command {
     return cmd
 }
 
+fn exists_rlib(krate: &str, profile: &str, target: &str, sysroot: &Path) -> bool {
+    for entry in t!(fs::read_dir(sysroot.join(format!("{}/lib/rustlib/{}/lib", profile, target)))) {
+        let path = t!(entry).path();
+        let filename = path.file_stem().unwrap().to_str().unwrap();
+        let extension = path.extension().unwrap().to_str().unwrap();
+
+        if filename.starts_with(&format!("lib{}", krate)) && extension == "rlib" && path.is_file() {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[test]
 fn supported_triple() {
     let triple = "arm-unknown-linux-gnueabihf";
@@ -33,8 +48,7 @@ fn supported_triple() {
                        .arg(td.path())
                        .arg("--verbose"));
 
-    assert!(td.path().join(format!("debug/lib/rustlib/{}/lib/libcore.rlib", triple))
-                     .is_file());
+    assert!(exists_rlib("core", "debug", triple, td.path()));
 
     run(cargo_sysroot().arg("--target")
                        .arg(triple)
@@ -42,10 +56,8 @@ fn supported_triple() {
                        .arg("--verbose")
                        .arg("--release"));
 
-    assert!(td.path().join(format!("debug/lib/rustlib/{}/lib/libcore.rlib", triple))
-                     .is_file());
-    assert!(td.path().join(format!("release/lib/rustlib/{}/lib/libcore.rlib", triple))
-                     .is_file());
+    assert!(exists_rlib("core", "debug", triple, td.path()));
+    assert!(exists_rlib("core", "release", triple, td.path()));
 }
 
 #[test]
@@ -69,8 +81,7 @@ fn custom_target() {
                        .arg("--verbose")
                        .current_dir(td.path()));
 
-    assert!(td.path().join("target/debug/lib/rustlib/custom/lib/libcore.rlib")
-                     .is_file());
+    assert!(exists_rlib("core", "debug", "custom", &td.path().join("target")));
 
     // test /path/to/target.json
     run(cargo_sysroot().arg("--target")
@@ -78,12 +89,31 @@ fn custom_target() {
                        .arg(td.path().join("other"))
                        .arg("--verbose"));
 
-    assert!(td.path().join("other/debug/lib/rustlib/custom/lib/libcore.rlib")
-                     .is_file());
+    assert!(exists_rlib("core", "debug", "custom", &td.path().join("other")));
 
     // make sure the original spec is there but the copied version is gone
     assert!(td.path().join("custom.json").is_file());
     assert!(!td.path().join("other/src/libcore/custom.json").is_file());
+}
+
+#[test]
+fn sysroot_toml() {
+    let toml = r#"
+        [target.arm-unknown-linux-gnueabihf]
+        crates = ["collections"]
+    "#;
+    let triple = "arm-unknown-linux-gnueabihf";
+
+    let td = t!(TempDir::new("cargo-sysroot"));
+    t!(t!(File::create(td.path().join("sysroot.toml"))).write_all(toml.as_bytes()));
+
+    run(cargo_sysroot().args(&["--target", triple])
+                       .arg(td.path())
+                       .arg("--verbose")
+                       .current_dir(td.path()));
+
+    assert!(exists_rlib("core", "debug", triple, td.path()));
+    assert!(exists_rlib("collections", "debug", triple, td.path()));
 }
 
 fn run(cmd: &mut Command) {

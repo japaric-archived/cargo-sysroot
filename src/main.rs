@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+extern crate chrono;
 extern crate clap;
 extern crate curl;
 extern crate fern;
@@ -7,22 +8,26 @@ extern crate flate2;
 extern crate rustc_version;
 extern crate tar;
 extern crate tempdir;
+extern crate toml;
 
 #[macro_use]
 extern crate log;
 
-use std::fs::{self, File};
+use std::env;
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use chrono::NaiveDate;
 use clap::{App, AppSettings, Arg, SubCommand};
 use curl::http;
+use rustc_version::Channel;
 
 // TODO proper error reporting
 macro_rules! try {
     ($e:expr) => {
-        $e.unwrap_or_else(|_| panic!(stringify!($e)))
+        $e.unwrap_or_else(|e| panic!("{} with {}", stringify!($e), e))
     }
 }
 
@@ -34,6 +39,7 @@ enum Target<'a> {
 }
 
 struct Context<'a> {
+    commit_date: NaiveDate,
     commit_hash: &'a str,
     host: &'a str,
     out_dir: &'a Path,
@@ -42,10 +48,59 @@ struct Context<'a> {
     verbose: bool,
 }
 
+struct Config {
+    table: Option<toml::Value>,
+}
+
+impl Config {
+    /// Parses `sysroot.toml`
+    fn parse() -> Config {
+        let path = Path::new("sysroot.toml");
+
+        let table = if path.exists() {
+            let ref mut toml = String::new();
+
+            try!(try!(File::open(path)).read_to_string(toml));
+
+            toml::Parser::new(toml).parse().map(toml::Value::Table)
+        } else {
+            info!("no sysroot.toml found, using default configuration");
+
+            None
+        };
+
+        Config { table: table }
+    }
+
+    /// Crates to build for this target, returns `["core"]` if not specified
+    fn crates(&self, target: &str) -> Vec<String> {
+        let ref key = format!("target.{}.crates", target);
+
+        let mut crates = self.table
+                             .as_ref()
+                             .and_then(|t| t.lookup(key))
+                             .and_then(|v| v.as_slice())
+                             .and_then(|vs| {
+                                 vs.iter().map(|v| v.as_str().map(|s| s.to_owned())).collect()
+                             })
+                             .unwrap_or_else(|| vec!["core".to_owned()]);
+
+        crates.push("core".to_owned());
+        crates.sort();
+        crates.dedup();
+        crates
+    }
+}
+
 fn main() {
-    let rustc_version::VersionMeta { ref host, ref commit_hash, .. } =
+    let rustc_version::VersionMeta { ref host, ref commit_date, ref commit_hash, ref channel, .. } =
         rustc_version::version_meta();
     let commit_hash = commit_hash.as_ref().unwrap();
+
+    match *channel {
+        Channel::Nightly => {}
+        _ => panic!("only the nightly channel is supported at this time (see issue #5)"),
+    }
 
     let ref matches = App::new("cargo-sysroot")
                           .bin_name("cargo")
@@ -86,10 +141,16 @@ fn main() {
             };
 
             let ref ctx = Context {
+                commit_date: NaiveDate::parse_from_str(commit_date.as_ref().unwrap(), "%Y-%m-%d")
+                                 .unwrap(),
                 commit_hash: commit_hash,
                 host: host,
                 out_dir: Path::new(out_dir),
-                profile: if matches.is_present("release") { "release" } else { "debug" },
+                profile: if matches.is_present("release") {
+                    "release"
+                } else {
+                    "debug"
+                },
                 target: target,
                 verbose: matches.is_present("verbose"),
             };
@@ -112,7 +173,12 @@ fn init_logger() {
     try!(fern::init_global_logger(config, log::LogLevelFilter::Trace));
 }
 
+// TODO Ultimately, we want to use `multirust fetch-source` for 100% correctness
 fn fetch_source(ctx: &Context) {
+    // XXX There doesn't seem to be way to get the _nightly_ date from the output of `rustc -Vv`
+    // So we _assume_ the nightly day is the day after the commit-date found in `rustc -Vv` which
+    // seems to be the common case, but it could be wrong and we'll end up building unusable crates
+    let date = ctx.commit_date.succ();
     let hash = ctx.commit_hash;
     let ref src_dir = ctx.out_dir.join("src");
     let ref hash_file = src_dir.join(".commit-hash");
@@ -135,9 +201,10 @@ fn fetch_source(ctx: &Context) {
     try!(fs::create_dir_all(src_dir));
 
     info!("fetching source tarball");
-    let mut handle = http::Handle::new();
-    let url = format!("https://github.com/rust-lang/rust/tarball/{}", hash);
-    let resp = try!(handle.get(&url[..]).follow_redirects(true).exec());
+    let handle = http::Handle::new();
+    let url = format!("http://static.rust-lang.org/dist/{}/rustc-nightly-src.tar.gz",
+                      date.format("%Y-%m-%d"));
+    let resp = try!(handle.timeout(300_000).get(&url[..]).follow_redirects(true).exec());
 
     assert_eq!(resp.get_code(), 200);
 
@@ -152,7 +219,7 @@ fn fetch_source(ctx: &Context) {
             components.next(); // skip rust-lang-rust-<...>
             let next = components.next().and_then(|s| s.as_os_str().to_str());
             if next != Some("src") {
-                continue
+                continue;
             }
             components.as_path().to_path_buf()
         };
@@ -193,20 +260,30 @@ fn link_dirs(src: &Path, dst: &Path) {
         if try!(entry.file_type()).is_dir() {
             link_dirs(&src, &dst);
         } else {
-            try!(fs::hard_link(&src, &dst).or_else(|_| {
-                fs::copy(&src, &dst).map(|_| ())
-            }));
+            try!(fs::hard_link(&src, &dst).or_else(|_| fs::copy(&src, &dst).map(|_| ())));
         }
     }
 }
 
-// XXX we only build the core crate for now
-// TODO build the rest of crates
 fn build_target_crates(ctx: &Context) {
-    let ref src_dir = ctx.out_dir.join("src/libcore");
+    const LIB_RS: &'static [u8] = b"#![no_std]";
 
-    let ref temp_dir = try!(tempdir::TempDir::new("core"));
+    let ref config = Config::parse();
+
+    let temp_dir = try!(tempdir::TempDir::new("sysroot"));
     let temp_dir = temp_dir.path();
+
+    // Create Cargo project
+    let ref mut cargo = Command::new("cargo");
+    cargo.current_dir(temp_dir);
+    cargo.args(&["new", "--vcs", "none"]);
+    if ctx.verbose {
+        cargo.arg("--verbose");
+    }
+    assert!(try!(cargo.arg("sysroot").status()).success());
+
+    let ref cargo_dir = temp_dir.join("sysroot");
+    let ref src_dir = env::current_dir().unwrap().join(ctx.out_dir).join("src");
 
     let (ref triple, ref spec_file): (String, _) = match ctx.target {
         Target::Spec(path) => {
@@ -218,38 +295,55 @@ fn build_target_crates(ctx: &Context) {
         Target::Triple(triple) => (triple.into(), PathBuf::from(format!("{}.json", triple))),
     };
 
-    let mut copied_spec_file = None;
-    if spec_file.exists() {
-        let dst = src_dir.join(format!("{}.json", triple));
-
-        info!("copy target specification file");
-        try!(fs::copy(spec_file, &dst));
-        copied_spec_file = Some(dst);
+    // Add crates to build as dependencies
+    let ref mut toml = try!(OpenOptions::new()
+                                .write(true)
+                                .append(true)
+                                .open(cargo_dir.join("Cargo.toml")));
+    let ref crates = config.crates(triple);
+    info!("will build the following crates: {:?}", crates);
+    for ref krate in crates {
+        try!(writeln!(toml,
+                      "{} = {{ path = '{}' }}",
+                      krate,
+                      src_dir.join(format!("lib{}", krate)).display()))
     }
 
-    info!("building the core crate");
-    let mut cmd = Command::new("cargo");
-    cmd.args(&["build", "--target", triple]);
+    {
+        let ref mut toml = String::new();
+        try!(try!(File::open(cargo_dir.join("Cargo.toml"))).read_to_string(toml));
+        debug!("sysroot's Cargo.toml: {}", toml);
+    }
+
+    // Rewrite lib.rs to only depend on libcore
+    try!(try!(OpenOptions::new().write(true).truncate(true).open(cargo_dir.join("src/lib.rs")))
+             .write_all(LIB_RS));
+
+    if spec_file.exists() {
+        info!("copy target specification file");
+        try!(fs::copy(spec_file, cargo_dir.join(format!("{}.json", triple))));
+    }
+
+    info!("building the target crates");
+    let ref mut cargo = Command::new("cargo");
+    cargo.current_dir(cargo_dir);
+    cargo.args(&["build", "--target", triple]);
     if ctx.profile == "release" {
-        cmd.arg("--release");
+        cargo.arg("--release");
     }
     if ctx.verbose {
-        cmd.arg("--verbose");
+        cargo.arg("--verbose");
     }
-    assert!(try!(cmd.current_dir(src_dir).env("CARGO_TARGET_DIR", temp_dir).status()).success());
+    assert!(try!(cargo.status()).success());
 
-    if let Some(file) = copied_spec_file {
-        info!("delete target specification file");
-        try!(fs::remove_file(file));
-    }
-
-    info!("copy the core crate to the sysroot");
+    info!("copy the target crates to the sysroot");
     let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", ctx.profile, triple));
-    try!(fs::create_dir_all(libdir));
+    let ref deps_dir = cargo_dir.join(format!("target/{}/{}/deps", triple, ctx.profile));
 
-    let ref src = temp_dir.join(format!("{}/{}/libcore.rlib",
-                                        triple,
-                                        ctx.profile));
-    let ref dst = libdir.join("libcore.rlib");
-    try!(fs::copy(src, dst));
+    try!(fs::create_dir_all(libdir));
+    for entry in try!(fs::read_dir(deps_dir)) {
+        let entry = try!(entry);
+
+        try!(fs::copy(entry.path(), libdir.join(entry.file_name())));
+    }
 }
