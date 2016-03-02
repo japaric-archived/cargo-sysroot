@@ -308,6 +308,12 @@ fn build_target_crates(ctx: &Context) {
                       src_dir.join(format!("lib{}", krate)).display()))
     }
 
+    {
+        let ref mut toml = String::new();
+        try!(try!(File::open(cargo_dir.join("Cargo.toml"))).read_to_string(toml));
+        debug!("sysroot's Cargo.toml: {}", toml);
+    }
+
     // Rewrite lib.rs to only depend on libcore
     try!(try!(OpenOptions::new().write(true).truncate(true).open(cargo_dir.join("src/lib.rs")))
              .write_all(LIB_RS));
