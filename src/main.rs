@@ -304,7 +304,7 @@ fn build_target_crates(ctx: &Context) {
     info!("will build the following crates: {:?}", crates);
     for ref krate in crates {
         try!(writeln!(toml,
-                      "{} = {{ path = \"{}\" }}",
+                      "{} = {{ path = '{}' }}",
                       krate,
                       src_dir.join(format!("lib{}", krate)).display()))
     }
