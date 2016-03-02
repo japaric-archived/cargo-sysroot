@@ -96,6 +96,26 @@ fn custom_target() {
     assert!(!td.path().join("other/src/libcore/custom.json").is_file());
 }
 
+#[test]
+fn sysroot_toml() {
+    let toml = r#"
+        [target.arm-unknown-linux-gnueabihf]
+        crates = ["collections"]
+    "#;
+    let triple = "arm-unknown-linux-gnueabihf";
+
+    let td = t!(TempDir::new("cargo-sysroot"));
+    t!(t!(File::create(td.path().join("sysroot.toml"))).write_all(toml.as_bytes()));
+
+    run(cargo_sysroot().args(&["--target", triple])
+                       .arg(td.path())
+                       .arg("--verbose")
+                       .current_dir(td.path()));
+
+    assert!(exists_rlib("core", "debug", triple, td.path()));
+    assert!(exists_rlib("collections", "debug", triple, td.path()));
+}
+
 fn run(cmd: &mut Command) {
     println!("running: {:?}", cmd);
     let output = t!(cmd.output());
