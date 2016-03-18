@@ -1,9 +1,29 @@
 environment:
+  global:
+    PROJECT_NAME: cargo-sysroot
   matrix:
-  - TARGET: x86_64-pc-windows-msvc
+    # Stable channel
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: stable
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: stable
+    # Beta channel
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: beta
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: beta
+    # Nightly channel
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: nightly
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: nightly
+
 install:
-  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-nightly-${env:TARGET}.exe"
-  - rust-nightly-%TARGET%.exe /VERYSILENT /NORESTART /DIR="C:\Program Files (x86)\Rust"
+  - ps: Start-FileDownload "https://static.rust-lang.org/dist/channel-rust-stable"
+  - ps: $env:RUST_VERSION = Get-Content channel-rust-stable | select -first 1 | %{$_.split('-')[1]}
+  - if NOT "%CHANNEL%" == "stable" set RUST_VERSION=%CHANNEL%
+  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-${env:RUST_VERSION}-${env:TARGET}.exe"
+  - rust-%RUST_VERSION%-%TARGET%.exe /VERYSILENT /NORESTART /DIR="C:\Program Files (x86)\Rust"
   - SET PATH=%PATH%;C:\Program Files (x86)\Rust\bin
   - rustc -V
   - cargo -V
@@ -11,7 +31,26 @@ install:
 build: false
 
 test_script:
-  - cargo test --verbose
+  - cargo build --verbose
+  - if "%CHANNEL%" == "nightly" cargo test
+
+before_deploy:
+  - cargo build --release
+  - mkdir staging
+  - copy target\release\cargo-sysroot.exe staging
+  - cd staging
+  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
+  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
+
+deploy:
+  description: 'Windows release'
+  artifact: /.*\.zip/
+  auth_token:
+    secure: IUR2A67gxVGUC68HYN3F6QoOEsTqiSMj8AkazZRi+6Xiu9T8sIS55rrDSCpXmHXh
+  provider: GitHub
+  on:
+    CHANNEL: stable
+    appveyor_repo_tag: true
 
 branches:
   only:
