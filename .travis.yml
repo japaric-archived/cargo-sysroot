@@ -11,6 +11,13 @@ matrix:
     # Stable channel
     - os: osx
       env: TARGET=i686-apple-darwin CHANNEL=stable
+    - os: linux
+      env: TARGET=i686-unknown-linux-gnu CHANNEL=stable
+      addons:
+        apt:
+          packages: &i686_unknown_linux_gnu
+            - gcc-multilib
+            - libssl-dev:i386
     - os: osx
       env: TARGET=x86_64-apple-darwin CHANNEL=stable
     - os: linux
@@ -18,6 +25,11 @@ matrix:
     # Beta channel
     - os: osx
       env: TARGET=i686-apple-darwin CHANNEL=beta
+    - os: linux
+      env: TARGET=i686-unknown-linux-gnu CHANNEL=beta
+      addons:
+        apt:
+          packages: *i686_unknown_linux_gnu
     - os: osx
       env: TARGET=x86_64-apple-darwin CHANNEL=beta
     - os: linux
@@ -25,6 +37,11 @@ matrix:
     # Nightly channel
     - os: osx
       env: TARGET=i686-apple-darwin CHANNEL=nightly
+    - os: linux
+      env: TARGET=i686-unknown-linux-gnu CHANNEL=nightly
+      addons:
+        apt:
+          packages: *i686_unknown_linux_gnu
     - os: osx
       env: TARGET=x86_64-apple-darwin CHANNEL=nightly
     - os: linux
