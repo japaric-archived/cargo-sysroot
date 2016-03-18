@@ -1,23 +1,60 @@
-language: rust
 sudo: false
-rust:
-  - stable
-  - beta
-  - nightly
 
-addons:
-  apt:
-    packages:
-      - tree
+language: generic
+
+env:
+  global:
+    - PROJECT_NAME=cargo-sysroot
+
+matrix:
+  include:
+    # Stable channel
+    - os: osx
+      env: TARGET=i686-apple-darwin CHANNEL=stable
+    - os: osx
+      env: TARGET=x86_64-apple-darwin CHANNEL=stable
+    - os: linux
+      env: TARGET=x86_64-unknown-linux-gnu CHANNEL=stable
+    # Beta channel
+    - os: osx
+      env: TARGET=i686-apple-darwin CHANNEL=beta
+    - os: osx
+      env: TARGET=x86_64-apple-darwin CHANNEL=beta
+    - os: linux
+      env: TARGET=x86_64-unknown-linux-gnu CHANNEL=beta
+    # Nightly channel
+    - os: osx
+      env: TARGET=i686-apple-darwin CHANNEL=nightly
+    - os: osx
+      env: TARGET=x86_64-apple-darwin CHANNEL=nightly
+    - os: linux
+      env: TARGET=x86_64-unknown-linux-gnu CHANNEL=nightly
+
+install:
+  - export PATH="$PATH:~/multirust/bin"
+  - bash ci/install.sh
 
 script:
-  - cargo build
-  - if [ "$TRAVIS_RUST_VERSION" = nightly ]; then
-      cargo test;
-    fi
+  - bash ci/script.sh
+
+before_deploy:
+  - bash ci/before_deploy.sh
+
+deploy:
+  provider: releases
+  api_key:
+    secure: kx8JlEAEMXT7AvrFA/0K3xCNTjblmqyZ14QTySTI5lquuueRWuTceLhow5x3Du4pVdz5zxs8rBg6XpWbWa9bt+hyyosZ7ikG5RKNzFne14KMGuNII2pb8wRGOy1A/vThdibYuSac8d5+6OvzT0F6/om9GU5hJIqVd/vmTEtUMHFmyADu9KXOXd3ePg/lv70punKKWm2NpCh7u78FgVnZDTLM0teEEfZnScW4jSHhoXlxMfq841EFhNeLlZBYdVWhp+bBccBV3v/pESSlQSha0N5D0x7c4Cvvq0YoZj6ZMJq5kAaysWML8BLIoRapKpZkIoEp+QM7D1Lq5GsW1WLwyjCWVBiFzhoFleEylgvYVOFExnKlcUL+hivMOfu1KDkgK8fg+gawNzozmcsPFFVRks/xBo/mXzwbq7/8y77QrlXDcYREtpQAvzuj9aXpZ12pu9CmYOhk4GjA+6yHHRzZnsOwUm9r6FzHDAg3OysCbUNAeKMlsqEOhTgF8henhCqCq+j4sNFJ3Z8GBlnctq7ckqYwpZqSVp30b/FSwuZfrztx1tlZLXU9PQszFAbgRD2w+ENeu7K7v8W45mQuomc/amoL4VhWVdUY0Gm4KP8FG8FA1C9ZJbuOf5vEBi8D82YG1AyvaZgHjXW2+TwNNQduUiSCYPon239V+nEOYeI8kNU=
+  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.tar.gz
+  skip_cleanup: true
+  on:
+    condition: $CHANNEL = stable
+    tags: true
 
 branches:
-  only: master
+  only:
+    - master
+    - /^v\d+\.\d+\.\d+.*$/
 
 notifications:
-  email: false
+  email:
+    on_success: never
