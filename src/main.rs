@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![cfg_attr(clippy, allow(block_in_if_condition_stmt))]
 
 extern crate chrono;
 extern crate clap;
@@ -58,7 +59,7 @@ impl Config {
         let path = Path::new("sysroot.toml");
 
         let table = if path.exists() {
-            let ref mut toml = String::new();
+            let toml = &mut String::new();
 
             try!(try!(File::open(path)).read_to_string(toml));
 
@@ -74,7 +75,7 @@ impl Config {
 
     /// Crates to build for this target, returns `["core"]` if not specified
     fn crates(&self, target: &str) -> Vec<String> {
-        let ref key = format!("target.{}.crates", target);
+        let key = &format!("target.{}.crates", target);
 
         let mut crates = self.table
                              .as_ref()
@@ -102,30 +103,30 @@ fn main() {
         _ => panic!("only the nightly channel is supported at this time (see issue #5)"),
     }
 
-    let ref matches = App::new("cargo-sysroot")
-                          .bin_name("cargo")
-                          .settings(&[AppSettings::SubcommandRequired])
-                          .subcommand(SubCommand::with_name("sysroot")
-                                          .about("Builds a sysroot with cross compiled standard \
-                                                  crates")
-                                          .arg(Arg::with_name("triple")
-                                                   .help("Target triple to compile for")
-                                                   .long("target")
-                                                   .required(true)
-                                                   .takes_value(true))
-                                          .arg(Arg::with_name("release")
-                                                   .help("Build artifacts in release mode, \
-                                                          with optimizations")
-                                                   .long("release"))
-                                          .arg(Arg::with_name("out_dir")
-                                                   .help("Output directory")
-                                                   .required(true))
-                                          .arg(Arg::with_name("verbose")
-                                                   .help("Verbose cargo builds")
-                                                   .long("verbose"))
-                                          .author("Jorge Aparicio <japaricious@gmail.com>"))
-                          .version(env!("CARGO_PKG_VERSION"))
-                          .get_matches();
+    let matches = &App::new("cargo-sysroot")
+                       .bin_name("cargo")
+                       .settings(&[AppSettings::SubcommandRequired])
+                       .subcommand(SubCommand::with_name("sysroot")
+                                       .about("Builds a sysroot with cross compiled standard \
+                                               crates")
+                                       .arg(Arg::with_name("triple")
+                                                .help("Target triple to compile for")
+                                                .long("target")
+                                                .required(true)
+                                                .takes_value(true))
+                                       .arg(Arg::with_name("release")
+                                                .help("Build artifacts in release mode, with \
+                                                       optimizations")
+                                                .long("release"))
+                                       .arg(Arg::with_name("out_dir")
+                                                .help("Output directory")
+                                                .required(true))
+                                       .arg(Arg::with_name("verbose")
+                                                .help("Verbose cargo builds")
+                                                .long("verbose"))
+                                       .author("Jorge Aparicio <japaricious@gmail.com>"))
+                       .version(env!("CARGO_PKG_VERSION"))
+                       .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("sysroot") {
         if let (Some(target), Some(out_dir)) = (matches.value_of("triple"),
@@ -140,7 +141,7 @@ fn main() {
                 Target::Triple(target)
             };
 
-            let ref ctx = Context {
+            let ctx = &Context {
                 commit_date: NaiveDate::parse_from_str(commit_date.as_ref().unwrap(), "%Y-%m-%d")
                                  .unwrap(),
                 commit_hash: commit_hash,
@@ -180,11 +181,11 @@ fn fetch_source(ctx: &Context) {
     // seems to be the common case, but it could be wrong and we'll end up building unusable crates
     let date = ctx.commit_date.succ();
     let hash = ctx.commit_hash;
-    let ref src_dir = ctx.out_dir.join("src");
-    let ref hash_file = src_dir.join(".commit-hash");
+    let src_dir = &ctx.out_dir.join("src");
+    let hash_file = &src_dir.join(".commit-hash");
 
     if hash_file.exists() {
-        let ref mut old_hash = String::with_capacity(hash.len());
+        let old_hash = &mut String::with_capacity(hash.len());
         try!(try!(File::open(hash_file)).read_to_string(old_hash));
 
         if old_hash == hash {
@@ -237,9 +238,9 @@ fn symlink_host_crates(ctx: &Context) {
                                                    .args(&["--print", "sysroot"])
                                                    .output())
                                               .stdout));
-    let ref src = Path::new(sys_root.trim_right()).join(format!("lib/rustlib/{}", ctx.host));
-    let ref rustlib_dir = ctx.out_dir.join(format!("{}/lib/rustlib", ctx.profile));
-    let ref dst = rustlib_dir.join(ctx.host);
+    let src = &Path::new(sys_root.trim_right()).join(format!("lib/rustlib/{}", ctx.host));
+    let rustlib_dir = &ctx.out_dir.join(format!("{}/lib/rustlib", ctx.profile));
+    let dst = &rustlib_dir.join(ctx.host);
 
     try!(fs::create_dir_all(rustlib_dir));
 
@@ -268,13 +269,13 @@ fn link_dirs(src: &Path, dst: &Path) {
 fn build_target_crates(ctx: &Context) {
     const LIB_RS: &'static [u8] = b"#![no_std]";
 
-    let ref config = Config::parse();
+    let config = &Config::parse();
 
     let temp_dir = try!(tempdir::TempDir::new("sysroot"));
     let temp_dir = temp_dir.path();
 
     // Create Cargo project
-    let ref mut cargo = Command::new("cargo");
+    let cargo = &mut Command::new("cargo");
     cargo.current_dir(temp_dir);
     cargo.args(&["new", "--vcs", "none"]);
     if ctx.verbose {
@@ -282,8 +283,8 @@ fn build_target_crates(ctx: &Context) {
     }
     assert!(try!(cargo.arg("sysroot").status()).success());
 
-    let ref cargo_dir = temp_dir.join("sysroot");
-    let ref src_dir = env::current_dir().unwrap().join(ctx.out_dir).join("src");
+    let cargo_dir = &temp_dir.join("sysroot");
+    let src_dir = &env::current_dir().unwrap().join(ctx.out_dir).join("src");
 
     let (ref triple, ref spec_file): (String, _) = match ctx.target {
         Target::Spec(path) => {
@@ -296,11 +297,11 @@ fn build_target_crates(ctx: &Context) {
     };
 
     // Add crates to build as dependencies
-    let ref mut toml = try!(OpenOptions::new()
-                                .write(true)
-                                .append(true)
-                                .open(cargo_dir.join("Cargo.toml")));
-    let ref crates = config.crates(triple);
+    let toml = &mut try!(OpenOptions::new()
+                             .write(true)
+                             .append(true)
+                             .open(cargo_dir.join("Cargo.toml")));
+    let crates = &config.crates(triple);
     info!("will build the following crates: {:?}", crates);
     for ref krate in crates {
         try!(writeln!(toml,
@@ -310,7 +311,7 @@ fn build_target_crates(ctx: &Context) {
     }
 
     {
-        let ref mut toml = String::new();
+        let toml = &mut String::new();
         try!(try!(File::open(cargo_dir.join("Cargo.toml"))).read_to_string(toml));
         debug!("sysroot's Cargo.toml: {}", toml);
     }
@@ -325,7 +326,7 @@ fn build_target_crates(ctx: &Context) {
     }
 
     info!("building the target crates");
-    let ref mut cargo = Command::new("cargo");
+    let cargo = &mut Command::new("cargo");
     cargo.current_dir(cargo_dir);
     cargo.args(&["build", "--target", triple]);
     if ctx.profile == "release" {
@@ -337,8 +338,8 @@ fn build_target_crates(ctx: &Context) {
     assert!(try!(cargo.status()).success());
 
     info!("copy the target crates to the sysroot");
-    let ref libdir = ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", ctx.profile, triple));
-    let ref deps_dir = cargo_dir.join(format!("target/{}/{}/deps", triple, ctx.profile));
+    let libdir = &ctx.out_dir.join(format!("{}/lib/rustlib/{}/lib", ctx.profile, triple));
+    let deps_dir = &cargo_dir.join(format!("target/{}/{}/deps", triple, ctx.profile));
 
     try!(fs::create_dir_all(libdir));
     for entry in try!(fs::read_dir(deps_dir)) {
