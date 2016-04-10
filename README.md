@@ -1,3 +1,30 @@
+# Status
+
+This project has been **SUPERSEDED** by [xargo][0]. `xargo` is a transparent Cargo wrapper that
+builds and handles a sysroot when you cross compile to custom targets. It's much easier to use
+than `cargo-sysroot`, instead of:
+
+```
+$ cargo sysroot --target $custom target/sysroot
+$ RUSTFLAGS='--sysroot target/sysroot/debug' cargo build --target $custom
+```
+
+you simply do:
+
+```
+$ xargo build --target $custom
+```
+
+Also you can use `xargo` wherever you used `cargo`: `xargo clean`, `xargo fmt`, etc. just work.
+
+[Check it out][0].
+
+-- @japaric 2016/04/10
+
+[0]: https://github.com/japaric/xargo
+
+---
+
 [![Travis](https://travis-ci.org/japaric/cargo-sysroot.svg?branch=master)](https://travis-ci.org/japaric/cargo-sysroot)
 [![Appveyor](https://ci.appveyor.com/api/projects/status/rm0cymdvbu5a89ja/branch/master?svg=true)](https://ci.appveyor.com/project/japaric/cargo-sysroot)
 
